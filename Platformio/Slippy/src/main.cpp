@@ -22,12 +22,8 @@ void serialEvent();
 void setup()
 {
 	// Initialize LoRa module
-	//LoRa.setPins(ss, rst, dio0); // Set the LoRa module pins
-
-	if (!LoRa.begin(915E6))
-	{ // Set the frequency of the LoRa module
-		while (1)
-			; // Failed to initialize LoRa module, halt
+	if (!LoRa.begin(915E6)) {
+		while (1); // Failed to initialize LoRa module, halt
 	}
 
 	Serial.begin(9600);
