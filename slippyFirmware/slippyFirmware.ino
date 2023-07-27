@@ -1,246 +1,296 @@
-#include <RHMesh.h>
-#include <RH_RF95.h>
+#include <SPI.h>
+#include <LoRa.h> /* https://github.com/sandeepmistry/arduino-LoRa */
+#include <ArduinoUniqueID.h> /* https://github.com/ricaun/ArduinoUniqueID */
 
-#define NODE_ADDRESS 0
-
-/* CONFIG */
-
-//LoRa
 #define LORA_CS 10
 #define LORA_RST 9
-#define LORA_INT 2
-#define LORA_FREQ 915.0
+#define LORA_IRQ 2
 
-//Serial
-#define HEADLESS true
-#define HUMAN_READABLE true
+#define LORA_FRQ 915E6
 
-/* ------ */
+#define MAX_BUFFER 64
+#define MSG_ID_BUCKET_SIZE 8
 
+#define NET_VERSION 1
+#define MESSAGE_INFO true
+#define LOG_INFO true
+#define LOG_WARNING true
+#define LOG_ERROR true
 
-/* 
-  Serial codes
-    [IN] <address> <message> : Incoming message
-    [OUT] <address> <message> : Outgoing message
-    [STATUS] <code> (<value>)... : Status message
+const uint8_t BROADCAST_ADDRESS[4] = {255, 255, 255, 255};
 
-  Serial commands
-    *[SEND] <address> <massage> : Send a message
-    *[SET] <veriable> <value>... : Set a value
+struct Packet {
+  uint8_t dest[4];
+  uint8_t src[4];
+  uint8_t msg_id[4];
+  uint8_t buffer_len;
+  uint8_t* buffer;
+};
 
-  (all marked with "*" is unimplemented)
-*/
+uint8_t localAddress[4];
 
-RH_RF95 rf95(LORA_CS, LORA_INT);
-RHMesh rfMesh(rf95, NODE_ADDRESS);
-
-char serialBuffer[RH_MESH_MAX_MESSAGE_LEN];
-int serialBufferIndex = 0;
+uint8_t msgIdBucket[MSG_ID_BUCKET_SIZE][4];
+uint8_t msgIdBucketPos = 0;
 
 void setup() {
+  Serial.begin(115200);
+  info("Starting slippy..\n");
+
   randomSeed(analogRead(0));
 
-  Serial.begin(9600);
-  while (!Serial); // Remove for headless
+  LoRa.setPins(LORA_CS, LORA_RST, LORA_IRQ);
 
-  if (HUMAN_READABLE) {
-    Serial.println("SlippyMesh Starting...");
-  } else {
-    Serial.print("[STATUS] STARTING");
+  if (!LoRa.begin(LORA_FRQ)) {
+    error("LoRa module failure.\n");
+    while (true);
   }
 
-  // reset the LoRa module or it will have alex.d behavior
-  pinMode(LORA_RST, OUTPUT);
-  digitalWrite(LORA_RST, HIGH);
-  delay(200);
-  digitalWrite(LORA_RST, LOW);
-  delay(200);
-  digitalWrite(LORA_RST, HIGH);
-  delay(50);
+  LoRa.setSpreadingFactor(12);
+  LoRa.setSignalBandwidth(125E3);
+  LoRa.setCodingRate4(5);
+  LoRa.setTxPower(20);
+  LoRa.enableCrc();
 
-  if (!rfMesh.init()) {
-    if (HUMAN_READABLE) {
-      Serial.println("Failed to init LoRa.");
-    } else {
-      Serial.println("[STATUS] ERROR_INIT");
-    }
-    while(1);
-  }
-
-  rf95.setModemConfig(RH_RF95::ModemConfigChoice::Bw125Cr45Sf2048);
-
-  if (!rf95.setFrequency(LORA_FREQ)) {
-    if (HUMAN_READABLE) {
-      Serial.println("Failed to set LoRa frequency.");
-    } else {
-      Serial.println("[STATUS] ERROR_LORA_FREQ");
-    }
-    while(1);
-  }
-
-  rfMesh.setTimeout(3000);
-  rfMesh.setRetries(5);
-
-
-  if (HUMAN_READABLE) {
-    Serial.println("Looking for available address.");
-  } else {
-    Serial.print("[STATUS] LOOKING");
-  }
-
-  uint8_t address = findAvailableAddress();
-  rfMesh.setThisAddress(address);
-
-  if (HUMAN_READABLE) {
-    Serial.println("Mesh network initialized.");
-  } else {
-    Serial.print("[STATUS] READY");
-  }
+  getAddress(localAddress);
+  
+  info("Your address is: ");
+  printAddress(localAddress, ".");
+  Serial.print("\n");
 }
-
-void(* resetFunc) (void) = 0; //declare reset function @ address 0
 
 void loop() {
-  while (Serial.available() > 0) {
-    char data = Serial.read();
-    if (data == '\n') {
-      serialBuffer[serialBufferIndex] = '\0';
-      //remove(serialBuffer, 7); // removes "[SEND] " // TODO: get acual command
+  while (Serial.available()) {
+    static char serialBuffer[MAX_BUFFER];
+    static unsigned int serialBufferPos = 0;
 
-      int addr = atoi(serialBuffer); // gets address
-      remove(serialBuffer, indexOf(serialBuffer, ';')+1); // removes the address
+    char inByte = Serial.read();
 
-      if (addr > 0 && addr < 256) {
-        if (HUMAN_READABLE) {
-          Serial.print("Sending \"");
-          Serial.print(serialBuffer);
-          Serial.print("\" to node #");
-          Serial.println(addr);
-        } else {
-          Serial.print("[OUT] ");
-          Serial.print(addr);
-          Serial.print(" ");
-          printASCII(serialBuffer);
-          Serial.println("");
-        }
-
-        sendMeshMessage(serialBuffer, addr);
-      } else {
-        if (HUMAN_READABLE) {
-          Serial.println("Invalid address.");
-        }
-      }
-
-      serialBufferIndex = 0;
-      memset(serialBuffer, 0, sizeof(serialBuffer));
+    if (inByte != '\n') {
+      serialBuffer[serialBufferPos] = inByte;
+      serialBufferPos += 1;
     } else {
-      if (serialBufferIndex < RH_MESH_MAX_MESSAGE_LEN - 1) {
-        serialBuffer[serialBufferIndex] = data;
-        serialBufferIndex++;
+      serialBuffer[serialBufferPos] = '\0';
+      serialBufferPos = 0;
+
+      char* cmdSplit[2];
+      splitCharArray(serialBuffer, ';', cmdSplit, 2);
+
+      char* message = cmdSplit[1];
+
+      char* ipSplit[4];
+      splitCharArray(cmdSplit[0], '.', ipSplit, 4);
+      
+      Packet newPacket;
+
+      for (int i = 0; i < 4; i++) {
+        newPacket.dest[i] = atoi(ipSplit[i]);
       }
+
+      for (int i = 0; i < 4; i++) {
+        newPacket.src[i] = localAddress[i];
+      }
+
+      for (int i = 0; i < 4; i++) {
+        newPacket.msg_id[i] = random(256);
+      }
+
+      newPacket.buffer_len = strlen(message);
+
+      char tempBuff[newPacket.buffer_len];
+      for (int i = 0; i < newPacket.buffer_len; i++) {
+        tempBuff[i] = message[i];
+      }
+
+      newPacket.buffer = tempBuff;
+
+      addIDtoMsgBucket(newPacket.msg_id);
+
+      sendPacket(newPacket);
+
+      info("Sent message.\n");
     }
   }
 
-  if (millis() % 5000 == 0) {
-    sendMeshMessage("5g vaccine chip acivate", 1);
-  }
-
-  if (millis() >= 300000) {
-    resetFunc();
-  }
-
-  if (rfMesh.available()) {
-    uint8_t buf[RH_MESH_MAX_MESSAGE_LEN];
-    uint8_t len = sizeof(buf);
-    uint8_t from;
-    uint8_t dest;
-
-    if (rfMesh.recvfromAck(buf, &len, &from, &dest)) {
-      if (dest == rfMesh.thisAddress() || dest == 255 ) {
-        if (HUMAN_READABLE) {
-          Serial.print("Message from node #");
-          Serial.print(from);
-          Serial.print(", \"");
-          Serial.print((char*)buf);
-          Serial.println("\"");
-          sendMeshMessage(buf, from);
-        } else {
-          Serial.print("[IN] ");
-          Serial.print(from);
-          Serial.print(" ");
-          Serial.println((char*)buf);
-        }
-      }
-    }
-  }
+  readPacket(LoRa.parsePacket());
 }
 
-void sendMeshMessage(char* message, uint8_t dest) {
-  if (rfMesh.sendtoWait((uint8_t*)message, strlen(message) + 1, dest) != RH_ROUTER_ERROR_NONE) {
-    if (HUMAN_READABLE) {
-      Serial.println("Message failed to send.");
-    } else {
-      Serial.println("[STATUS] ERROR_SEND");
-    }
+void sendPacket(Packet packet) {
+  LoRa.beginPacket();
+
+  LoRa.write(NET_VERSION);
+
+  for (size_t i = 0; i < 4; i++) {
+    LoRa.write(packet.dest[i]);
   }
+
+  for (size_t i = 0; i < 4; i++) {
+    LoRa.write(packet.src[i]);
+  }
+
+  for (size_t i = 0; i < 4; i++) {
+    LoRa.write(packet.msg_id[i]);
+  }
+
+  LoRa.write(packet.buffer_len);
+
+  for (size_t i = 0; i < packet.buffer_len; i++) {
+    LoRa.write(packet.buffer[i]);
+  }
+
+  LoRa.endPacket();
 }
 
-uint8_t findAvailableAddress() {
-  unt8_t nodeId = 1;
-
-  while (nodeId <= 255) {
-    if (rfMesh.sendtoWait((uint8_t*)"PING", 5, nodeId) == RH_ROUTER_ERROR_NO_ROUTE) {
-      if (HUMAN_READABLE) {
-        Serial.print("Found available address, Assigned #");
-        Serial.print(nodeId);
-        Serial.println(".");
-      } else {
-        Serial.print("[STATUS] ID ");
-        Serial.println(nodeId);
-      }
-      return nodeId;
-    }
-
-    nodeId++;
+void readPacket(int packetSize) {
+  if (packetSize == 0) {
+    return;
   }
 
-  if (HUMAN_READABLE) {
-    Serial.println("No available address found.");
+  if (LoRa.read() != NET_VERSION) {
+    return;
+  }
+
+  Packet newPacket;
+
+  for (int i = 0; i < 4; i++) {
+    newPacket.dest[i] = LoRa.read();
+  }
+
+  for (int i = 0; i < 4; i++) {
+    newPacket.src[i] = LoRa.read();
+  }
+
+  for (int i = 0; i < 4; i++) {
+    newPacket.msg_id[i] = LoRa.read();
+  }
+
+  newPacket.buffer_len = LoRa.read();
+
+  char tempBuff[newPacket.buffer_len];
+  for (int i = 0; i < newPacket.buffer_len; i++) {
+    tempBuff[i] = LoRa.read();
+  }
+
+  newPacket.buffer = tempBuff;
+
+  if (checkBucket(newPacket.msg_id)) {
+    info("Alrady recived this message, Ignoring.\n");  
+    return;
+  }
+
+  addIDtoMsgBucket(newPacket.msg_id);
+
+  if (compAddress(newPacket.dest, localAddress)) {
+    printPacket(newPacket);
+  } else if (compAddress(newPacket.dest, {BROADCAST_ADDRESS})){
+    printPacket(newPacket);
+    sendPacket(newPacket);
   } else {
-    Serial.println("[STATUS] ERROR_NO_ADDR");
+    sendPacket(newPacket);
   }
-  while (1);
-  //return 192;
 }
 
-// helpers
-
-int indexOf(char *str, char searchChar) {
-  int len = strlen(str);
-  for (int i = 0; i < len; i++) {
-    if (str[i] == searchChar) {
-      return i;
-    }
+void printPacket(Packet packet) {
+  Serial.println("-------[MESSAGE]-------");
+  Serial.print("Message: \"");
+  for (int i = 0; i < packet.buffer_len; i++) {
+    Serial.print((char)packet.buffer[i]);
   }
-  return 0;
+  Serial.print("\"\n");
+  Serial.print("To: ");
+  printAddress(packet.dest, ".");
+  Serial.print("\nFrom: ");
+  printAddress(packet.src, ".");
+  Serial.print("\n");
+
+  if (MESSAGE_INFO) {
+    Serial.print("\n");
+    Serial.println("More Info:");
+    Serial.print("RSSI: ");
+    Serial.println(LoRa.packetRssi());
+    Serial.print("SNR: ");
+    Serial.println(LoRa.packetSnr());
+    Serial.print("Message ID: ");
+    printAddress(packet.msg_id, "");
+    Serial.print("\n");
+  }
+
+  Serial.println("-----[END MESSAGE]-----");
+
 }
 
-void remove(char* str, int n) {
-    int len = strlen(str);
-    if (n >= len) {
-        str[0] = '\0';
-    } else {
-        memmove(str, str + n, len - n + 1);
-    }
+void splitCharArray(char* input, char delimiter, char** outputArray, int maxElements) {
+  int inputLength = strlen(input);
+  int elementCount = 0;
+  char* token = strtok(input, &delimiter);
+
+  while (token != NULL && elementCount < maxElements) {
+    outputArray[elementCount++] = token;
+    token = strtok(NULL, &delimiter);
+  }
 }
 
-void printASCII(char* data) {
-  Serial.print("[");
-  for (int i = 0; i < strlen(data); i++) {
-    if (i > 0) {
-      Serial.print(", ");
-    }
-    Serial.print((int)data[i]);
+void getAddress(uint8_t* addr) {
+  for (size_t i = 0; i < 4; i++) {
+    addr[i] = UniqueID8[i + 4];
   }
-  Serial.print("]");
+}
+
+bool compAddress(uint8_t* a, uint8_t* b) {
+  for (size_t i = 0; i < 4; i++) {
+    if (a[i] != b[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+void printAddress(uint8_t* addr, char* delimiter) {
+  for (size_t i = 0; i < 4; i++) {
+    if (i != 0) {
+      Serial.print(delimiter);
+    }
+    Serial.print(addr[i], DEC);
+  }
+}
+
+void addIDtoMsgBucket(uint8_t* id) {
+  for (int i = 0; i < 4; i++) {
+    msgIdBucket[msgIdBucketPos][i] = id[i];
+  }
+  msgIdBucketPos += 1;
+
+  if (msgIdBucketPos >= MSG_ID_BUCKET_SIZE) {
+    msgIdBucketPos = 0;
+  }
+}
+
+bool checkBucket(uint8_t* id) {
+  for (int i = 0; i < MSG_ID_BUCKET_SIZE; i++) {
+    if (compAddress(msgIdBucket[i], id)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/* Logging */
+void info(char* msg) {
+  if (LOG_INFO) {
+    Serial.print("[INFO] ");
+    Serial.print(msg);
+  }
+}
+
+void warning(char* msg) {
+  if (LOG_WARNING) {
+    Serial.print("[WARNING] ");
+    Serial.print(msg);
+  }
+}
+
+void error(char* msg) {
+  if (LOG_ERROR) {
+    Serial.print("[ERROR] ");
+    Serial.print(msg);
+  }
 }
