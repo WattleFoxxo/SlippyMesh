@@ -47,13 +47,13 @@ void setup() {
   // LoRa.setSignalBandwidth(125E3);
   // LoRa.setCodingRate4(5);
   // LoRa.setTxPower(20);
-  // LoRa.enableCrc();
 
-  LoRa.setTxPower(20);                   // Supported values are 2 to 20
-  LeRa.setSpreadingFactor(12);           // Supported values are between 6 and 12
-  LoRa.setSignalBandwidth(62.5E3);       // Supported values are 7.8E3, 10.4E3, 15.6E3, 20.8E3, 31.25E3, 41.7E3, 62.5E3, 125E3, 250E3, and 500E3.
-  LoRa.setCodingRate4(8);                // Supported values are between 5 and 8, these correspond to coding rates of 4/5 and 4/8
-  LoRa.setGain(6);                       // Supported values are between 0 and 6
+  LoRa.setTxPower(20);                    // Supported values are 2 to 20
+  LoRa.setSpreadingFactor(12);            // Supported values are between 6 and 12
+  LoRa.setSignalBandwidth(125E3);         // Supported values are 7.8E3, 10.4E3, 15.6E3, 20.8E3, 31.25E3, 41.7E3, 62.5E3, 125E3, 250E3, and 500E3.
+  LoRa.setCodingRate4(8);                 // Supported values are between 5 and 8, these correspond to coding rates of 4/5 and 4/8
+  // LoRa.setGain(6);                        // Supported values are between 0 and 6
+  LoRa.enableCrc();
 
   getAddress(localAddress);
   
