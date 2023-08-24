@@ -2,336 +2,382 @@
 #include <LoRa.h> /* https://github.com/sandeepmistry/arduino-LoRa */
 #include <ArduinoUniqueID.h> /* https://github.com/ricaun/ArduinoUniqueID */
 
-/*
-ip of mnt talor 57.15.21.28
-*/
+// LoRa Pins
+#define LORA_CS_PIN 10
+#define LORA_RESET_PIN 9
+#define LORA_IRQ_PIN 2
 
-#define LORA_CS 10
-#define LORA_RST 9
-#define LORA_IRQ 2
-#define LORA_FRQ 915E6
+// LoRa Modem Settings
+#define LORA_SF 7
+#define LORA_BW 125E3
+#define LORA_CR 8
+#define LORA_PREAMBLE_LENGTH 12
+#define LORA_FREQ 915E6
 
-#define MAX_BUFFER 128
-#define MSG_ID_BUCKET_SIZE 16
-#define NET_VERSION 2
+// Slippy Settings
+#define SLIPPY_AUTO_RESTART true
+#define SLIPPY_AUTO_RESTART_WARNING true
+#define SLIPPY_AUTO_RESTART_TIME 30
+#define SLIPPY_AUTO_RESTART_WARNING_TIME 25
+#define SLIPPY_AUTO_RESTART_WARNING_MESSAGE "This node will be restarting in 5 minutes!"
+#define SLIPPY_DEBUG_MESSAGES true
 
-const uint8_t BROADCAST_ADDRESS[4] = {255, 255, 255, 255};
+// Slippy Network Static Definitions (NO TOUCHY!)
+#define SLIPPY_NETWORK_VERSION 3
+#define SLIPPY_BUFFER_SIZE 128
+#define SLIPPY_SYNC_WORD 0x22
+#define SLIPPY_MSG_ID_BUCKET_SIZE 8
+#define SLIPPY_PACKET_NORMAL 0b00000000
+#define SLIPPY_PACKET_NOMESH 0b10000000
 
-struct Packet {
-  uint8_t dest[4];
-  uint8_t src[4];
-  uint8_t msg_id[4];
-  uint8_t buffer_len;
-  uint8_t* buffer;
+// The packet structure
+struct SlippyPacket {
+  uint8_t netVer; // The network version for compatibility checking
+  uint8_t packetType; // The packet type, bit 0: Meshing/Relaying, bit 1-7 N/A 
+  uint32_t source; // The address of the sender
+  uint32_t destination; // The address of the target
+  uint16_t messageId; // The message id to avoid relaying old packets
+  uint8_t data[SLIPPY_BUFFER_SIZE]; // The Packet data
 };
 
-uint8_t localAddress[4];
+uint8_t LORA_MESSAGE_LENGTH = sizeof(SlippyPacket);
 
-uint8_t msgIdBucket[MSG_ID_BUCKET_SIZE][4];
+uint32_t localAddress = 0;
+
+uint16_t msgIdBucket[SLIPPY_MSG_ID_BUCKET_SIZE]; // A bucket to store the recent message ids
 uint8_t msgIdBucketPos = 0;
+
+bool autoRestartWarning = true;
+
+void(* resetFunc)(void) = 0; // Software reset function
 
 void setup() {
   Serial.begin(115200);
-  Serial.println("INIT"); // "Starting slippy.."
+  Serial.println(F("Slippy Mesh is starting.."));
 
   randomSeed(analogRead(0));
 
-  LoRa.setPins(LORA_CS, LORA_RST, LORA_IRQ);
+  // Initialize the lora module
+  LoRa.setPins(LORA_CS_PIN, LORA_RESET_PIN, LORA_IRQ_PIN);
 
-  if (!LoRa.begin(LORA_FRQ)) {
-    Serial.println("LORA_FAIL"); // "LoRa module failure!"
-    while(true);
+  if (!LoRa.begin(LORA_FREQ)){
+    Serial.println(F("The LoRa module failed to initialize!"));
+    while (true);
   }
 
-  // LoRa.setSpreadingFactor(12);
-  // LoRa.setSignalBandwidth(125E3);
-  // LoRa.setCodingRate4(5);
-  // LoRa.setTxPower(20);
-
-  LoRa.setTxPower(20);                    // Supported values are 2 to 20
-  LoRa.setSpreadingFactor(12);            // Supported values are between 6 and 12
-  LoRa.setSignalBandwidth(125E3);         // Supported values are 7.8E3, 10.4E3, 15.6E3, 20.8E3, 31.25E3, 41.7E3, 62.5E3, 125E3, 250E3, and 500E3.
-  LoRa.setCodingRate4(8);                 // Supported values are between 5 and 8, these correspond to coding rates of 4/5 and 4/8
-  // LoRa.setGain(6);                        // Supported values are between 0 and 6
+  // Set the modem settings
+  LoRa.setTxPower(20);
+  LoRa.setSpreadingFactor(LORA_SF);
+  LoRa.setSignalBandwidth(LORA_BW);
+  LoRa.setCodingRate4(LORA_CR);
+  LoRa.setPreambleLength(LORA_PREAMBLE_LENGTH);
+  LoRa.setSyncWord(SLIPPY_SYNC_WORD);
   LoRa.enableCrc();
 
-  getAddress(localAddress);
+  // Retrieve the local address using unique ids
+  localAddress = pack32(UniqueID8, 4);
   
-  Serial.print("READY "); // "Rady, Your address is: <address>""
-  printArray(localAddress, ".", 4);
-  Serial.print("\n");
+  Serial.print(F("Ready, Your address is: "));
+
+  for (int i = 0; i < 4; i++) {
+    if (i != 0) {
+      Serial.print(".");
+    }
+    Serial.print(UniqueID8[i+4]);
+  }
+  Serial.print(F("\n"));
+  Serial.println(F("Type \"H\" for help."));
 }
 
 void loop() {
+  // Read serial
   if (Serial.available() > 0) {
-    char serialBuffer[512];
-    char *token;
+    char commandBuffer[2] = {0, 0};
+    uint8_t cmdLen = Serial.readBytesUntil(' ', commandBuffer, 3);
 
-    byte numBytes = Serial.readBytesUntil('\n', serialBuffer, 512);
-    token = strtok(serialBuffer, " ");
-
-    Packet newPacket;
-    
-    for (int i = 0; i < 4; i++) {
-      newPacket.dest[i] = atoi(strtok(NULL, " "));
+    // Help command
+    if (commandBuffer[0] == 'H') {
+      Serial.println(F("--- Help ---"));
+      Serial.println(F("H : Shows this menu."));
+      Serial.println(F(""));
+      Serial.println(F("S<Mode> <Address> <Message> : Sends a message"));
+      Serial.println(F("      Mode: (optional) Packet mode, Available modes: N (normal packet), M (packet without meshing/relaying)"));
+      Serial.println(F("      Address: Destination address, Format: X.X.X.X, X is a value from 0 to 255. To send a message to everyone use: 255.255.255.255"));
+      Serial.println(F("      Message: Message, The Message you want to send"));
+      Serial.println(F("      Examples: \"S 192.168.0.1 I have your ip :nerd:\", \"SM 255.255.255.255 Only people near me can hear me\", \"S 192.168.0.1 PING\" (You should receive \"PONG\")."));
+      Serial.println(F("------------"));
     }
 
-    for (int i = 0; i < 4; i++) {
-      newPacket.src[i] = localAddress[i];
-    }
+    // Send command
+    if (commandBuffer[0] == 'S') {
+      uint8_t addressArray[4];
+      for (int i = 0; i < 4; i++) {
+        char addressBuffer[4];
+        uint8_t len;
+        if (i == 3) {
+          len = Serial.readBytesUntil(' ', addressBuffer, 4);
+        } else {
+          len = Serial.readBytesUntil('.', addressBuffer, 4);
+        }
+        addressBuffer[len] = '\0';
+        addressArray[i] = atoi(addressBuffer);
+      }
 
-    for (int i = 0; i < 4; i++) {
-      newPacket.msg_id[i] = random(256);
-    }
-    
-    newPacket.buffer_len = atoi(strtok(NULL, " "));
+      uint32_t address = pack32(addressArray, 0);
 
-    char tempBuff[newPacket.buffer_len];
-    for (int i = 0; i < newPacket.buffer_len; i++) {
-      tempBuff[i] = (char)atoi(strtok(NULL, " "));
-    }
-    newPacket.buffer = tempBuff;
+      char dataBuffer[SLIPPY_BUFFER_SIZE];
+      uint8_t numBytes = Serial.readBytesUntil('\n', dataBuffer, SLIPPY_BUFFER_SIZE-1);
+      dataBuffer[numBytes] = '\0';
 
-    sendPacket(newPacket);
+      uint8_t packetType = SLIPPY_PACKET_NORMAL;
+      
+      if (commandBuffer[1] == 'M') {
+        packetType = SLIPPY_PACKET_NOMESH;
+      }
+
+      SlippyPacket newPacket;
+      newPacket.netVer = SLIPPY_NETWORK_VERSION;
+      newPacket.packetType = packetType;
+      newPacket.source = localAddress;
+      newPacket.destination = address;
+      newPacket.messageId = random(0xFFFF);
+      strcpy(newPacket.data, dataBuffer);
+      addIDtoMsgBucket(newPacket.messageId);
+      sendPacket(newPacket);
+    }
   }
 
-  readPacket(LoRa.parsePacket());
+  // Auto restart
+  if (SLIPPY_AUTO_RESTART) {
+    if (millis() >= SLIPPY_AUTO_RESTART_WARNING_TIME*60000 && autoRestartWarning) {
+      autoRestartWarning = false;
+      SlippyPacket newPacket;
+      newPacket.netVer = SLIPPY_NETWORK_VERSION;
+      newPacket.packetType = SLIPPY_PACKET_NORMAL;
+      newPacket.source = localAddress;
+      newPacket.destination = 0xFFFFFFFF;
+      newPacket.messageId = random(0xFFFF);
+      strcpy(newPacket.data, SLIPPY_AUTO_RESTART_WARNING_MESSAGE);
+      addIDtoMsgBucket(newPacket.messageId);
+      sendPacket(newPacket);
+    }
+
+    if (millis() >= SLIPPY_AUTO_RESTART_TIME*60000) {
+      resetFunc();
+    }
+  }
+
+  // Read LoRa
+  receivePacket(LoRa.parsePacket());
 }
 
-void sendPacket(Packet packet) {
-  Serial.println("SENDING"); // "Sending..."
+// Sends a packet
+void sendPacket(SlippyPacket packet) {
+  if (SLIPPY_DEBUG_MESSAGES) { Serial.println(F("[Debug] Sending packet..")); }
   LoRa.beginPacket();
-
-  LoRa.write(NET_VERSION);
-
-  for (size_t i = 0; i < 4; i++) {
-    LoRa.write(packet.dest[i]);
-  }
-
-  for (size_t i = 0; i < 4; i++) {
-    LoRa.write(packet.src[i]);
-  }
-
-  for (size_t i = 0; i < 4; i++) {
-    LoRa.write(packet.msg_id[i]);
-  }
-
-  LoRa.write(packet.buffer_len);
-
-  for (size_t i = 0; i < packet.buffer_len; i++) {
-    LoRa.write(packet.buffer[i]);
-  }
-
+  LoRaPut(packet); // Puts the packet into the lora buffer
   LoRa.endPacket();
-  Serial.println("SENT"); // "Sent."
+  if (SLIPPY_DEBUG_MESSAGES) { Serial.println(F("[Debug] Sent packet..")); }
 }
 
-void readPacket(int packetSize) {
+// Reads the next packet
+void receivePacket(int packetSize) {
   if (packetSize == 0) {
     return;
   }
 
-  if (LoRa.read() != NET_VERSION) {
+  SlippyPacket newPacket;
+  LoRaGet(newPacket); // Gets the packet from the lora buffer
+
+  if (newPacket.netVer != SLIPPY_NETWORK_VERSION) {
+    if (SLIPPY_DEBUG_MESSAGES) { Serial.println(F("[Debug] Received packet with invalid network version, Ignoring.")); }
     return;
   }
 
-  Packet newPacket;
-
-  for (int i = 0; i < 4; i++) {
-    newPacket.dest[i] = LoRa.read();
-  }
-
-  for (int i = 0; i < 4; i++) {
-    newPacket.src[i] = LoRa.read();
-  }
-
-  for (int i = 0; i < 4; i++) {
-    newPacket.msg_id[i] = LoRa.read();
-  }
-
-  newPacket.buffer_len = LoRa.read();
-
-  char tempBuff[newPacket.buffer_len];
-  for (int i = 0; i < newPacket.buffer_len; i++) {
-    tempBuff[i] = LoRa.read();
-  }
-
-  newPacket.buffer = tempBuff;
-
-  if (checkBucket(newPacket.msg_id)) {
-    Serial.println("OLD_MSG"); // "Alrady recived this message, Ignoring."  
+  // Check if the message id is alrady in the bucket
+  if (checkBucket(newPacket.messageId)) {
+    if (SLIPPY_DEBUG_MESSAGES) { Serial.println(F("[Debug] Alrady recived this packet, Ignoring.")); }
     return;
   }
 
-  addIDtoMsgBucket(newPacket.msg_id);
+  // Save this message id
+  addIDtoMsgBucket(newPacket.messageId);
 
-  if (compAddress(newPacket.dest, localAddress)) {
+  bool packetType[8];
+  unpack8(newPacket.packetType, packetType);
+
+  // Check the destination address
+  if (newPacket.destination == localAddress) {
+    // The destination is your address
     printPacket(newPacket);
 
-    if (compBuffer(newPacket.buffer, "PING", 4)) {
-      Packet pongPacket;
+    if (newPacket.data[0] == 'P' && newPacket.data[1] == 'I' && newPacket.data[2] == 'N' && newPacket.data[3] == 'G') {
+      SlippyPacket pongPacket;
+      pongPacket.netVer = SLIPPY_NETWORK_VERSION;
+      pongPacket.packetType = newPacket.packetType;
+      pongPacket.source = localAddress;
+      pongPacket.destination = newPacket.source;
+      pongPacket.messageId = random(0xFFFF);
+      strcpy(pongPacket.data, "PONG");
 
-      for (int i = 0; i < 4; i++) {
-        pongPacket.dest[i] = newPacket.src[i];
-      }
-
-      for (int i = 0; i < 4; i++) {
-        pongPacket.src[i] = localAddress[i];
-      }
-
-      for (int i = 0; i < 4; i++) {
-        pongPacket.msg_id[i] = random(256);
-      }
-
-      pongPacket.buffer_len = 4;
-
-      pongPacket.buffer = "PONG";
+      if (SLIPPY_DEBUG_MESSAGES) { Serial.println(F("[Debug] Received \"PING\", Responding with \"PONG\"..")); }
 
       sendPacket(pongPacket);
     }
-  } else if (compAddress(newPacket.dest, {BROADCAST_ADDRESS})){
-    //printPacket(newPacket);
-    
-    if (compBuffer(newPacket.buffer, "PING", 4)) {
-      Packet pongPacket;
+  } else if (newPacket.destination == 0xFFFFFFFF) {
+    // The destination is the global address
+    if (SLIPPY_DEBUG_MESSAGES) { Serial.print(F("[Debug] Received global packet")); }
 
-      for (int i = 0; i < 4; i++) {
-        pongPacket.dest[i] = newPacket.src[i];
-      }
+    if (!packetType[0]) {
+      if (SLIPPY_DEBUG_MESSAGES) { Serial.println(F(", Relaying..")); }
+      sendPacket(newPacket);
+    } else {
+      if (SLIPPY_DEBUG_MESSAGES) { Serial.println(F(" with meshing/relaying disabled.")); }
+    } 
 
-      for (int i = 0; i < 4; i++) {
-        pongPacket.src[i] = localAddress[i];
-      }
-
-      for (int i = 0; i < 4; i++) {
-        pongPacket.msg_id[i] = random(256);
-      }
-
-      pongPacket.buffer_len = 4;
-
-      pongPacket.buffer = "PONG";
-
-      sendPacket(pongPacket);
-    }
-    
-    sendPacket(newPacket);
+    printPacket(newPacket);
   } else {
-    Serial.println("WRONG_ADDR"); // "This packet is not for me, Rebroadcasting"
-    sendPacket(newPacket);
+    // The packet is for someone else
+    if (SLIPPY_DEBUG_MESSAGES) { Serial.print(F("[Debug] This packet is not for me")); }
+
+    if (!packetType[0]) {
+      if (SLIPPY_DEBUG_MESSAGES) { Serial.println(F(", Relaying..")); }
+      sendPacket(newPacket);
+    } else {
+      if (SLIPPY_DEBUG_MESSAGES) { Serial.println(F(" and meshing/relaying is disabled.")); }
+    }  
   }
 }
 
-void sendPong() {
+// Prints out relevent infomation in the packet and some lora info
+void printPacket(SlippyPacket packet) {
+  Serial.println(F("--- Message ---"));
+  Serial.print(F("Network Version: "));
+  Serial.println(packet.netVer, DEC);
+  Serial.print(F("Source Address: "));
   
-      
-}
-
-void printPacket(Packet packet) {
-  Serial.print("MESSAGE ");
-
-  printArray(packet.dest, ".", 4);
-  Serial.print(" ");
-  printArray(packet.src, ".", 4);
-  Serial.print(" ");
-  printArray(packet.msg_id, "", 4);
-  Serial.print(" ");
-  Serial.print(packet.buffer_len, DEC);
-  Serial.print(" ");
-  printArray(packet.buffer, ",", packet.buffer_len);
-  Serial.print(" ");
-  Serial.print(LoRa.packetRssi(), DEC);
-  Serial.print(" ");
-  Serial.print(LoRa.packetSnr(), DEC);
-  Serial.print("\n");
-}
-
-void splitCharArray(char* input, char delimiter, char** outputArray, int maxElements) {
-  int inputLength = strlen(input);
-  int elementCount = 0;
-  char* token = strtok(input, &delimiter);
-
-  while (token != NULL && elementCount < maxElements) {
-    outputArray[elementCount++] = token;
-    token = strtok(NULL, &delimiter);
-  }
-}
-
-void printArray(uint8_t* arr, char* del, int size) {
-  for (int i = 0; i < size; i++) {
-    if (i != 0) {
-      Serial.print(del);
-    }
-    Serial.print(arr[i], DEC);
-  }
-}
-
-void getAddress(uint8_t* addr) {
-  for (size_t i = 0; i < 4; i++) {
-    addr[i] = UniqueID8[i + 4];
-  }
-}
-
-bool compAddress(uint8_t* a, uint8_t* b) {
-  for (size_t i = 0; i < 4; i++) {
-    if (a[i] != b[i]) {
-      return false;
-    }
-  }
-  return true;
-}
-
-bool compBuffer(uint8_t* a, uint8_t* b, uint8_t size) {
-  for (size_t i = 0; i < size; i++) {
-    if (a[i] != b[i]) {
-      return false;
-    }
-  }
-  return true;
-}
-
-void copyBuffer(uint8_t* a, uint8_t* b, uint8_t size) {
-  for (size_t i = 0; i < size; i++) {
-    a[i] == b[i];
-  }
-}
-
-void repeatBuffer(uint8_t* a, uint8_t b, uint8_t size) {
-  for (size_t i = 0; i < size; i++) {
-    a[i] == b;
-  }
-}
-
-void randomBuffer(uint8_t* a, uint8_t max, uint8_t size) {
-  for (size_t i = 0; i < size; i++) {
-    a[i] == random(max);
-  }
-}
-
-void printAddress(uint8_t* addr, char* delimiter) {
-  for (size_t i = 0; i < 4; i++) {
-    if (i != 0) {
-      Serial.print(delimiter);
-    }
-    Serial.print(addr[i], DEC);
-  }
-}
-
-void addIDtoMsgBucket(uint8_t* id) {
+  uint8_t source[4];
+  unpack32(packet.source, source);
   for (int i = 0; i < 4; i++) {
-    msgIdBucket[msgIdBucketPos][i] = id[i];
+    if (i != 0) {
+      Serial.print(".");
+    }
+    Serial.print(source[i]);
   }
-  msgIdBucketPos += 1;
+  Serial.print(F("\n"));
 
-  if (msgIdBucketPos >= MSG_ID_BUCKET_SIZE) {
+  Serial.print(F("Destination Address: "));
+
+  uint8_t destination[4];
+  unpack32(packet.destination, destination);
+  for (int i = 0; i < 4; i++) {
+    if (i != 0) {
+      Serial.print(F("."));
+    }
+    Serial.print(destination[i]);
+  }
+  Serial.print(F("\n"));
+
+  Serial.print(F("Message ID: "));
+  Serial.println(packet.messageId, DEC);
+  Serial.print(F("Data: "));
+  Serial.println((char*)packet.data);
+  Serial.print(F("RSSI: "));
+  Serial.println(LoRa.packetRssi(), DEC);
+  Serial.print(F("SNR: "));
+  Serial.println(LoRa.packetSnr(), DEC);
+  Serial.println(F("---------------"));
+}
+
+// Packs an array of uint8s into a single uint32
+uint32_t pack32(uint8_t* in, uint8_t offset) {
+  return ((uint32_t(in[offset]) << 24) | (uint32_t(in[offset+1]) << 16) | (uint32_t(in[offset+2]) << 8) | uint32_t(in[offset+3]));
+}
+
+// Unpacks a single uint32 into an array of uint8s
+void unpack32(uint32_t in, uint8_t* out) {
+  out[0] = (in >> 24) & 0xFF;
+  out[1] = (in >> 16) & 0xFF;
+  out[2] = (in >> 8) & 0xFF;
+  out[3] = in & 0xFF;
+}
+
+// Packs an array of bools into a single uint8
+uint8_t pack8(bool* in) {
+  uint8_t out = 0;
+  out |= in[7];
+  out |= in[6] << 1;
+  out |= in[5] << 2;
+  out |= in[4] << 3;
+  out |= in[3] << 4;
+  out |= in[2] << 5;
+  out |= in[1] << 6;
+  out |= in[0] << 7;
+  return out;
+}
+
+// Unpacks a single uint8 into an array of bools
+void unpack8(uint8_t in, bool* out) {
+  out[7] = in & 0x01;
+  out[6] = (in >> 1) & 0x01;
+  out[5] = (in >> 2) & 0x01;
+  out[4] = (in >> 3) & 0x01;
+  out[3] = (in >> 4) & 0x01;
+  out[2] = (in >> 5) & 0x01;
+  out[1] = (in >> 6) & 0x01;
+  out[0] = (in >> 7) & 0x01;
+}
+
+// Im even not going to lie i have no idea what this does but it works
+// from: https://github.com/chandrawi/LoRaRF-Arduino/blob/main/src/SX127x.h#L73
+template <typename T> void LoRaPut(T data) {
+  const uint8_t length = sizeof(T);
+  union conv {
+    T Data;
+    uint8_t Binary[length];
+  };
+  union conv u;
+  u.Data = data;
+  LoRa.write(u.Binary, length);
+}
+
+// Im even not going to lie i have no idea what this does but it works
+// https://github.com/chandrawi/LoRaRF-Arduino/blob/main/src/SX127x.h#L93
+template <typename T> uint8_t LoRaGet(T &data) {
+  const uint8_t length = sizeof(T);
+  union conv {
+    T Data;
+    uint8_t Binary[length];
+  };
+  union conv u;
+  uint8_t len = LoRaRead(u.Binary, length);
+  data = u.Data;
+  return len;
+}
+
+// Reads the reqested amout of bytes from the lora and puts it into a buffer
+uint8_t LoRaRead(uint8_t* data, uint8_t length) {
+    for (uint8_t i = 0; i < length; i++) {
+        data[i] = LoRa.read();
+    }
+    return length;
+}
+
+// Add a new message id to the bucket and removes the oldest id
+void addIDtoMsgBucket(uint16_t id) {
+  msgIdBucket[msgIdBucketPos] = id;
+  if (msgIdBucketPos >= SLIPPY_MSG_ID_BUCKET_SIZE) {
     msgIdBucketPos = 0;
   }
 }
 
+// Checks if the bucket contians a message id
 bool checkBucket(uint8_t* id) {
-  for (int i = 0; i < MSG_ID_BUCKET_SIZE; i++) {
-    if (compAddress(msgIdBucket[i], id)) {
+  for (int i = 0; i < SLIPPY_MSG_ID_BUCKET_SIZE; i++) {
+    if (msgIdBucket[i] == id) {
       return true;
     }
   }
   return false;
 }
+
