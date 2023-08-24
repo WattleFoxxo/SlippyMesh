@@ -15,12 +15,12 @@
 #define LORA_FREQ 915E6
 
 // Slippy Settings
-#define SLIPPY_AUTO_RESTART true
+#define SLIPPY_AUTO_RESTART false
 #define SLIPPY_AUTO_RESTART_WARNING true
 #define SLIPPY_AUTO_RESTART_TIME 30
 #define SLIPPY_AUTO_RESTART_WARNING_TIME 25
 #define SLIPPY_AUTO_RESTART_WARNING_MESSAGE "This node will be restarting in 5 minutes!"
-#define SLIPPY_DEBUG_MESSAGES true
+#define SLIPPY_DEBUG_MESSAGES false
 
 // Slippy Network Static Definitions (NO TOUCHY!)
 #define SLIPPY_NETWORK_VERSION 3
@@ -329,7 +329,7 @@ void unpack8(uint8_t in, bool* out) {
 }
 
 // Im even not going to lie i have no idea what this does but it works
-// from: https://github.com/chandrawi/LoRaRF-Arduino/blob/main/src/SX127x.h#L73
+// credit: https://github.com/chandrawi/LoRaRF-Arduino/blob/main/src/SX127x.h#L73
 template <typename T> void LoRaPut(T data) {
   const uint8_t length = sizeof(T);
   union conv {
@@ -342,7 +342,7 @@ template <typename T> void LoRaPut(T data) {
 }
 
 // Im even not going to lie i have no idea what this does but it works
-// https://github.com/chandrawi/LoRaRF-Arduino/blob/main/src/SX127x.h#L93
+// credit: https://github.com/chandrawi/LoRaRF-Arduino/blob/main/src/SX127x.h#L93
 template <typename T> uint8_t LoRaGet(T &data) {
   const uint8_t length = sizeof(T);
   union conv {
