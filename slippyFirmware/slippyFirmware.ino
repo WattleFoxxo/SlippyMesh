@@ -169,7 +169,7 @@ void loop() {
           uint8_t len = Serial.readBytesUntil(' ', tempBuffer, 4);
           tempBuffer[len] = '\0';
 
-          if (tempBuffer[0] == 'E') { // change to '\n' when done
+          if (tempBuffer[0] == '\n') {
             dataBuffer[i-4] = '\0';
             break;
           }
