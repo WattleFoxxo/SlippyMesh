@@ -439,7 +439,7 @@ void printPacket(SlippyPacket packet) {
 
     for (int i = 0; i < dataLen; i++) {
       if (i != 0) {
-        Serial.print(F(" "));
+        Serial.print(F(","));
       }
       Serial.print(packet.data[i], DEC);
     }
