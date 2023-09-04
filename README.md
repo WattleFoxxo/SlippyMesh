@@ -1,1 +1,1 @@
-# Slippy Mesh Firmware
+# Slippy Mesh V3
