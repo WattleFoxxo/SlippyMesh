@@ -11,9 +11,9 @@ A lightweight flodded mesh-network
 1. Open `SlippyFirmware/SlippyFirmware.ino` in the arduino ide.
 
 2. Make sure you install the required libraries.
- - [Arduino LoRa](https://github.com/WattleFoxxo/arduino-LoRa)*
- - [Arduino Unique ID](https://github.com/ricaun/ArduinoUniqueID)
- - [AT Commands](https://github.com/yourapiexpert/ATCommands)
+   - [Arduino LoRa](https://github.com/WattleFoxxo/arduino-LoRa)*
+   - [Arduino Unique ID](https://github.com/ricaun/ArduinoUniqueID)
+   - [AT Commands](https://github.com/yourapiexpert/ATCommands)
 
 > libraries marked with "*" are custom forks.
 
