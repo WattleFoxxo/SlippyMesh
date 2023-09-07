@@ -330,9 +330,8 @@ void sendPacket(SlippyDataStreamPacket *packet) {
 }
 
 void printPacket(SlippyDataStreamPacket *packet) {
-  Serial.println(F("--- Message ---"));
-  Serial.print(F("Source Address: "));
-  
+  Serial.print(F("AT+MESSAGE="));
+
   uint8_t source[4];
   unpack32(packet->sourceAddress, source);
   for (int i = 0; i < 4; i++) {
@@ -341,9 +340,8 @@ void printPacket(SlippyDataStreamPacket *packet) {
     }
     Serial.print(source[i]);
   }
-  Serial.print(F("\n"));
 
-  Serial.print(F("Destination Address: "));
+  Serial.print(F(","));
 
   uint8_t destination[4];
   unpack32(packet->destinationAddress, destination);
@@ -353,19 +351,17 @@ void printPacket(SlippyDataStreamPacket *packet) {
     }
   Serial.print(destination[i]);
   }
-  Serial.print(F("\n"));
 
-  Serial.print(F("Message ID: "));
-  Serial.println(packet->packetId, DEC);
-  Serial.print(F("Packet Hops: "));
-  Serial.println(packet->hops, DEC);
-  Serial.print(F("Data: "));
-  Serial.println((char*)packet->data);
-  Serial.print(F("RSSI: "));
-  Serial.println(LoRa.packetRssi(), DEC);
-  Serial.print(F("SNR: "));
+  Serial.print(F(","));
+  Serial.print(packet->packetId, DEC);
+  Serial.print(F(","));
+  Serial.print(packet->hops, DEC);
+  Serial.print(F(","));
+  Serial.print((char*)packet->data);
+  Serial.print(F(","));
+  Serial.print(LoRa.packetRssi(), DEC);
+  Serial.print(F(","));
   Serial.println(LoRa.packetSnr(), DEC);
-  Serial.println(F("---------------"));
 }
 
 
