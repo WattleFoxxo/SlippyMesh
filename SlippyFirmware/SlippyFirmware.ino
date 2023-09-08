@@ -99,7 +99,7 @@ bool ATSendCmd(ATCommands *sender) {
   dataStreamOut.packetId = random(0xFFFF);
   strcpy(dataStreamOut.data, buff.c_str());
   
-  //addIDtoPacketBucket(dataStreamOut.packetId);
+  addIDtoPacketBucket(dataStreamOut.packetId);
   sendPacket(&dataStreamOut);
 
   return true;
@@ -271,7 +271,7 @@ void readPacket(uint8_t packetSize) {
       LoRaGet(dataStreamIn);
       LoRa.setFrequency(CHANNELS[SLIPPY_COORDANATOR_CHANNEL]);
 
-      //addIDtoPacketBucket(dataStreamIn.packetId);
+      addIDtoPacketBucket(dataStreamIn.packetId);
 
       if (dataStreamIn.destinationAddress == localAddress) {
         printPacket(&dataStreamIn);
