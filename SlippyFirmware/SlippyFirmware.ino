@@ -2,6 +2,7 @@
 #include <LoRa.h> /* YOU NEED THE FORKED LIBARY: https://github.com/WattleFoxxo/arduino-LoRa */
 #include <ArduinoUniqueID.h> /* https://github.com/ricaun/ArduinoUniqueID */
 #include <ATCommands.h> /* https://github.com/yourapiexpert/ATCommands */
+#include <base64.hpp>
 
 // LoRa Pins
 #define LORA_CS_PIN 10
@@ -26,7 +27,7 @@
 #define SLIPPY_NETWORK_VERSION 4
 #define SLIPPY_BUFFER_SIZE 128
 #define SLIPPY_SYNC_WORD 0x22
-#define SLIPPY_PACKET_ID_BUCKET_SIZE 8
+#define SLIPPY_PACKET_ID_BUCKET_SIZE 16
 #define SLIPPY_PACKET_COORDANATOR 0
 #define SLIPPY_PACKET_DATASTREAM 1
 #define SLIPPY_COORDANATOR_CHANNEL 0
@@ -106,9 +107,21 @@ bool ATSendCmd(ATCommands *sender) {
 }
 
 // Send Bytes Command
-bool ATSendBytesCmd(ATCommands *sender) {
-  Serial.println(sender->next());
-  Serial.println(sender->next());
+bool ATSendBase64Cmd(ATCommands *sender) {
+  uint8_t address[4] = {sender->next().toInt(), sender->next().toInt(), sender->next().toInt(), sender->next().toInt()};
+  String base64 = sender->next();
+  uint8_t buffer[128];
+
+  decode_base64(base64.c_str(), buffer);
+  
+  dataStreamOut.sourceAddress = localAddress;
+  dataStreamOut.destinationAddress = pack32(address, 0);
+  dataStreamOut.packetId = random(0xFFFF);
+  strcpy(dataStreamOut.data, buffer);
+  
+  addIDtoPacketBucket(dataStreamOut.packetId);
+  sendPacket(&dataStreamOut);
+
   return true;
 }
 
@@ -116,7 +129,7 @@ bool ATSendBytesCmd(ATCommands *sender) {
 static at_command_t commands[] = {
   {"+HELP", ATHelpCmd, ATSlippyError, ATSlippyError, ATSlippyError},
   {"+SEND", ATSlippyError, ATSlippyError, ATSlippyError, ATSendCmd},
-  {"+SENDBYTES", ATSlippyError, ATSlippyError, ATSlippyError, ATSendBytesCmd},
+  {"+SENDBASE64", ATSlippyError, ATSlippyError, ATSlippyError, ATSendBase64Cmd},
 };
 
 /* MAIN PROGRAM */
@@ -357,11 +370,54 @@ void printPacket(SlippyDataStreamPacket *packet) {
   Serial.print(F(","));
   Serial.print(packet->hops, DEC);
   Serial.print(F(","));
-  Serial.print((char*)packet->data);
+  
+  unsigned char base64[256];
+  encode_base64(packet->data, strlen((char*)packet->data), base64);
+  Serial.print((char*)base64);
+
   Serial.print(F(","));
   Serial.print(LoRa.packetRssi(), DEC);
   Serial.print(F(","));
   Serial.println(LoRa.packetSnr(), DEC);
+  printPacketReadable(packet);
+}
+
+void printPacketReadable(SlippyDataStreamPacket *packet) {
+  Serial.println(F("--- Message ---"));
+
+  Serial.print(F("Source Address: "));
+  uint8_t source[4];
+  unpack32(packet->sourceAddress, source);
+  for (int i = 0; i < 4; i++) {
+    if (i != 0) {
+      Serial.print(F("."));
+    }
+    Serial.print(source[i]);
+  }
+  Serial.print(F("\n"));
+
+  Serial.print(F("Destination Address: "));
+  uint8_t destination[4];
+  unpack32(packet->destinationAddress, destination);
+  for (int i = 0; i < 4; i++) {
+    if (i != 0) {
+      Serial.print(F("."));
+    }
+  Serial.print(destination[i]);
+  }
+  Serial.print(F("\n"));
+
+  Serial.print(F("Packet ID: "));
+  Serial.println(packet->packetId, DEC);
+  Serial.print(F("Packet Hops: "));
+  Serial.println(packet->hops, DEC);
+  Serial.print(F("RSSI: "));
+  Serial.println(LoRa.packetRssi(), DEC);
+  Serial.print(F("SNR: "));
+  Serial.println(LoRa.packetSnr(), DEC);
+  Serial.print(F("Message: "));
+  Serial.println((char*)packet->data);
+  Serial.println(F("---------------"));
 }
 
 
