@@ -30,6 +30,7 @@
 #define SLIPPY_PACKET_ID_BUCKET_SIZE 16
 #define SLIPPY_PACKET_COORDANATOR 0
 #define SLIPPY_PACKET_DATASTREAM 1
+#define SLIPPY_PACKET_ACK 2
 #define SLIPPY_COORDANATOR_CHANNEL 0
 #define SLIPPY_BROADCAST_ADDRESS 0xFFFFFFFF
 
@@ -101,7 +102,7 @@ bool ATSendCmd(ATCommands *sender) {
   strcpy(dataStreamOut.data, buff.c_str());
   
   addIDtoPacketBucket(dataStreamOut.packetId);
-  sendPacket(&dataStreamOut);
+  sendReliablePacket(&dataStreamOut);
 
   return true;
 }
@@ -120,7 +121,7 @@ bool ATSendBase64Cmd(ATCommands *sender) {
   strcpy(dataStreamOut.data, buffer);
   
   addIDtoPacketBucket(dataStreamOut.packetId);
-  sendPacket(&dataStreamOut);
+  sendReliablePacket(&dataStreamOut);
 
   return true;
 }
@@ -286,6 +287,11 @@ void readPacket(uint8_t packetSize) {
 
       addIDtoPacketBucket(dataStreamIn.packetId);
 
+      LoRa.beginPacket();
+      LoRa.write(SLIPPY_NETWORK_VERSION);
+      LoRa.write(SLIPPY_PACKET_ACK);
+      LoRa.endPacket();
+
       if (dataStreamIn.destinationAddress == localAddress) {
         printPacket(&dataStreamIn);
         alexD(&dataStreamIn);
@@ -294,11 +300,11 @@ void readPacket(uint8_t packetSize) {
         alexD(&dataStreamIn);
         Serial.println(F("[Debug] Packet is a broadcast, rebroadcasting.."));
         dataStreamIn.hops += 1;
-        sendPacket(&dataStreamIn);
+        sendReliablePacket(&dataStreamIn);
       } else {
         Serial.println(F("[Debug] Packet not for me, rebroadcasting.."));
         dataStreamIn.hops += 1;
-        sendPacket(&dataStreamIn);
+        sendReliablePacket(&dataStreamIn);
       }
     }
   }
@@ -340,6 +346,39 @@ void sendPacket(SlippyDataStreamPacket *packet) {
   LoRa.setFrequency(CHANNELS[SLIPPY_COORDANATOR_CHANNEL]);
 
   Serial.println(F("[Debug] Finished transmitting."));
+}
+
+bool sendReliablePacket(SlippyDataStreamPacket *packet) {
+  uint8_t acks = 5;
+  while (acks != 0) {
+    sendPacket(packet);
+    if (waitForACK()) {
+      Serial.println("ACK received!");
+      return true;
+    } else {
+      Serial.println("No ACK received.");
+      acks -= 1;
+    }
+  }
+  return false;
+}
+
+bool waitForACK() {
+  long startTime = millis();
+  while (millis() - startTime < 3000) {  // Wait for up to 5 seconds for ACK
+    int packetSize = LoRa.parsePacket();
+    if (packetSize) {
+      if (LoRa.read() != SLIPPY_NETWORK_VERSION) {
+        LoRa.flush();
+        return false;
+      }
+
+      if (LoRa.read() == SLIPPY_PACKET_ACK) {
+        return true;        
+      }
+    }
+  }
+  return false;  // No ACK received within the timeout
 }
 
 void printPacket(SlippyDataStreamPacket *packet) {
@@ -501,10 +540,11 @@ void unpack8(uint8_t in, bool* out) {
 
 // Add a new message id to the bucket and removes the oldest id
 void addIDtoPacketBucket(uint16_t id) {
-  packetIdBucket[packetIdBucketPos] = id;
+  packetIdBucketPos += 1;
   if (packetIdBucketPos >= SLIPPY_PACKET_ID_BUCKET_SIZE) {
     packetIdBucketPos = 0;
   }
+  packetIdBucket[packetIdBucketPos] = id;
 }
 
 // Checks if the bucket contians a message id
