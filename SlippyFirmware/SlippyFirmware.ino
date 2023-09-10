@@ -2,7 +2,7 @@
 #include <LoRa.h> /* YOU NEED THE FORKED LIBARY: https://github.com/WattleFoxxo/arduino-LoRa */
 #include <ArduinoUniqueID.h> /* https://github.com/ricaun/ArduinoUniqueID */
 #include <ATCommands.h> /* https://github.com/yourapiexpert/ATCommands */
-#include <base64.hpp>
+#include <base64.hpp> /* https://github.com/Densaugeo/base64_arduino */
 
 // LoRa Pins
 #define LORA_CS_PIN 10
@@ -113,7 +113,8 @@ bool ATSendBase64Cmd(ATCommands *sender) {
   String base64 = sender->next();
   uint8_t buffer[128];
 
-  decode_base64(base64.c_str(), buffer);
+  uint8_t len = decode_base64(base64.c_str(), buffer);
+  buffer[len] = '\0';
   
   dataStreamOut.sourceAddress = localAddress;
   dataStreamOut.destinationAddress = pack32(address, 0);
@@ -121,7 +122,7 @@ bool ATSendBase64Cmd(ATCommands *sender) {
   strcpy(dataStreamOut.data, buffer);
   
   addIDtoPacketBucket(dataStreamOut.packetId);
-  sendReliablePacket(&dataStreamOut);
+  sendPacket(&dataStreamOut);
 
   return true;
 }
@@ -335,7 +336,7 @@ void sendPacket(SlippyDataStreamPacket *packet) {
 
   LoRa.setFrequency(CHANNELS[channel]);
 
-  delay(200);
+  delay(100);
 
   LoRa.beginPacket();
   LoRa.write(SLIPPY_NETWORK_VERSION);
