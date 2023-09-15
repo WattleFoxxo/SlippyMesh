@@ -133,6 +133,7 @@ void loop() {
 
     if (Serial.available() > 0) {
         String cmd = Serial.readStringUntil(' ');
+        cmd.trim();
 
         if (cmd == "help") cmdHelp();
         else if (cmd == "info") cmdInfo();
@@ -289,7 +290,7 @@ void cmdInfo() {
     Serial.println(radio.getDeviceVersion());
     Serial.print(F("Uptime: "));
     Serial.println(millis());
-    Serial.print(F("Json: "));
+    Serial.print(F("JSON: "));
     Serial.print(F("\"info\":{\"address\":"));
     Serial.print(localAddress);
     Serial.print(F(",\"network_version\":"));

@@ -40,7 +40,7 @@ void cmdInfo();
 void cmdSend();
 void cmdSend64();
 
-void alexD(uint8_t from);
+void alexD(uint8_t from, Packet packet);
 
 void(* resetFunc)(void) = 0;
 
