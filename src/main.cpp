@@ -30,7 +30,7 @@ void setup() {
     }
 
     radio.setTxPower(23, false);
-    radio.setFrequency(915.0);
+    radio.setFrequency(916.0);
     radio.setCADTimeout(500);
 
     for(uint8_t n=1;n<=SLIPPY_MAX_NODES;n++) {
@@ -103,7 +103,7 @@ void loop() {
         if (packet.packet_type == SLIPPY_PACKET_DIRECT) {
             Serial.println(F("-- Message --"));
             Serial.print(F("Address: "));
-            Serial.println(localAddress);
+            Serial.println(from, DEC);
             Serial.print(F("Data: "));
             printBytes(packet.data, packet.length);
             Serial.print(F("\nJSON: "));
@@ -114,11 +114,11 @@ void loop() {
             Serial.println(F("\"}"));
             Serial.println(F("-------------"));
 
-            alexD(from);
+            alexD(from, packet);
         } else if (packet.packet_type == SLIPPY_PACKET_BROADCAST) {
             Serial.println(F("-- Broadcast Message --"));
             Serial.print(F("Address: "));
-            Serial.println(localAddress);
+            Serial.println(from, DEC);
             Serial.print(F("Data: "));
             printBytes(packet.data, packet.length);
             Serial.print(F("\nJSON: "));
@@ -327,13 +327,15 @@ void cmdSend64() {
 
 /* AlexD Commands */
 
-void alexD(uint8_t from) {
-    if (!strcmp(incomingBuffer, "/ping")) {
+void alexD(uint8_t from, Packet packet) {
+    packet.data[packet.length] = '\0';
+    
+    if (!strcmp(packet.data, "/ping")) {
         String message = "pong";
-        sendMessage(from, message.c_str(), message.length()); // alexd
+        sendMessage(from, message.c_str(), message.length());
     }
 
-    if (!strcmp(incomingBuffer, "/uptime")) {
+    if (!strcmp(packet.data, "/uptime")) {
         String message = "uptime: "+String(millis())+" ms";
         sendMessage(from, message.c_str(), message.length());
     }
