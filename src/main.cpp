@@ -188,6 +188,10 @@ bool sendMessage(uint8_t address, uint8_t* message, uint8_t len) {
         Serial.println(F("Sending message to every node, this will take a while..."));
 
         for (uint8_t addr = 1; addr < SLIPPY_MAX_NODES; addr++) {
+            Serial.print(F("Sending message to "));
+            Serial.print(addr);
+            Serial.print(F("... "));
+
             uint8_t error = manager->sendtoWait(packetBuff, packetLen, addr);
             if (error != RH_ROUTER_ERROR_NONE) {
                 Serial.print(F("ERROR: "));
