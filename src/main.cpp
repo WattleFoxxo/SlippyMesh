@@ -7,6 +7,8 @@ int16_t rssi[SLIPPY_MAX_NODES];
 RH_RF95 radio;
 RHMesh *manager;
 
+Settings settings;
+
 uint8_t incomingBuffer[RH_MESH_MAX_MESSAGE_LEN];
 
 int freeMem() {
@@ -21,6 +23,22 @@ void setup() {
     delay(500);
 
     Serial.println(F("Starting Slippy Mesh..."));
+
+    uint8_t EEPROM_INTEGRITY_CHECK[6];
+    EEPROM.get(EEPROM_ADDR_INTEGRITY, EEPROM_INTEGRITY_CHECK);
+
+    // Check if EEPROM is corrupted or not set
+    if (!strcmp((char*)EEPROM_INTEGRITY_CHECK, (char*)EEPROM_INTEGRITY)) {
+        EEPROM.get(EEPROM_ADDR_SETTINGS, settings);
+    } else {
+        Serial.println(F("Warning: the EEPROM was corrupted or not set, writing defaults."));
+
+        settings.prefered_address = SETTING_PREFERED_ADDRESS_DEFUALT;
+        settings.auto_restart = SETTING_AUTO_RESTART_DEFUALT;
+
+        EEPROM.put(EEPROM_ADDR_INTEGRITY, EEPROM_INTEGRITY);
+        EEPROM.put(EEPROM_ADDR_SETTINGS, settings);
+    }
 
     manager = new RHMesh(radio, 0);
 
@@ -38,7 +56,7 @@ void setup() {
         rssi[n-1] = 0;
     }
 
-    localAddress = findAvalabeAddress(SETTING_PREFERED_ADDRESS);
+    localAddress = findAvalabeAddress(settings.prefered_address);
     manager->setThisAddress(localAddress);
 
     Serial.println(F("Slippy Mesh is ready!"));
@@ -139,11 +157,14 @@ void loop() {
         else if (cmd == "info") cmdInfo();
         else if (cmd == "send") cmdSend();
         else if (cmd == "send64") cmdSend64();
+        else if (cmd == "set_address") cmdSetAddress();
+        else if (cmd == "set_auto_restart") cmdSetAutoRestart();
+        else if (cmd == "nuke_all_the_settings_please") cmdWipe();
         else cmdUnrecognized(cmd);
     }
 
-    if (SETTING_AUTO_RESTART) {
-        if ((millis() / 60000) > SETTING_AUTO_RESTART) {
+    if (settings.auto_restart) {
+        if ((millis() / 60000) > settings.auto_restart) {
             resetFunc();
         }
     }
@@ -238,7 +259,7 @@ uint8_t findAvalabeAddress(uint8_t addr) {
 
     serializePacket(packet, packetBuff);
 
-    if (!SETTING_PREFERED_ADDRESS) {
+    if (!settings.prefered_address) {
         addr = random(253) + 1;
     }
 
@@ -249,6 +270,11 @@ uint8_t findAvalabeAddress(uint8_t addr) {
         if (error == RH_ROUTER_ERROR_NO_ROUTE) {
             Serial.print(addr);
             Serial.println(F(" is available!"));
+            if (!settings.prefered_address) {
+                settings.prefered_address = addr;
+                EEPROM.put(EEPROM_ADDR_SETTINGS, settings);
+            }
+
             return addr;
         } else {
             Serial.print(addr);
@@ -269,15 +295,16 @@ void cmdUnrecognized(String cmd) {
 
 void cmdHelp() {
 	Serial.println(F("-- Help --"));
-    Serial.println(F("Networking"));
-    Serial.println(F("    Send message: send <address: byte> <message: string>"));
-    Serial.println(F("        example: send 1 hello"));
-    Serial.println(F("        example: send 255 hello everyone (warning this is very slow)"));
-    Serial.println(F("    Send message with \"base64 encryption\": send64 <address: byte> <message: string>"));
-    Serial.println(F("        example: send64 36 YWxleGQ="));
+    Serial.println(F("Messaging"));
+    Serial.println(F("    Send message: \"send <address: byte> <message: string>\". Examples: \"send 1 hello\", \"send 255 hello everyone\" (this is very slow)"));
+    Serial.println(F("    Send base64 string: \"send64 <address: byte> <message: string>\". Examples: \"send64 1 YWxleGQ=\", \"send64 255 aGVsbG8gZXZlcnlvbmU=\" (this is very slow)"));
+    Serial.println(F("Settings"));
+    Serial.println(F("    Set your preferred address: \"set_address <address: byte>\". Examples: \"set_address 4\", \"set_address 0\" (this will pick a random address)"));
+    Serial.println(F("    Set the auto restart timer: \"set_auto_restart <time: byte>\". Examples: \"set_auto_restart 30\" (the devce restart every 30 minutes), \"set_auto_restart 0\" (this will disable it)"));
+    Serial.println(F("    Reset all the settings: \"nuke_all_the_settings_please\""));
     Serial.println(F("Other"));
-    Serial.println(F("    Get basic information: info"));
-    Serial.println(F("    Get help: help"));
+    Serial.println(F("    Get basic information: \"info\""));
+    Serial.println(F("    Get help: \"help\""));
     Serial.println(F("For more info go to https://github.com/WattleFoxxo/SlippyMesh/"));
     Serial.println(F("----------"));
 }
@@ -324,6 +351,49 @@ void cmdSend64() {
     message[len] = '\0';
 
     sendMessage(address, message, strlen(message));
+}
+
+void cmdWipe() {
+    Serial.println(F("Warning: This will WIPE all saved settings! are you sure you want to do this? (y/N)"));
+    while (Serial.available() == 0);
+
+    String answer = Serial.readStringUntil('\n');
+    answer.trim();
+    answer.toLowerCase();
+
+    if (answer == "y") {
+        EEPROM.write(EEPROM_ADDR_INTEGRITY, 0); // Corrupt the eeprom integrity.
+        Serial.println(F("Done, restarting..."));
+        
+        delay(500);
+        resetFunc(); // Restart the device when done.
+
+        return; // If this gets called something is very very wrong.
+    }
+
+    Serial.println(F("Canceled."));
+}
+
+void cmdSetAddress() {
+    uint8_t address = Serial.readStringUntil('\n').toInt();
+    settings.prefered_address = address;
+
+    EEPROM.put(EEPROM_ADDR_SETTINGS, settings);
+    Serial.println(F("Set your address, restarting..."));
+    
+    delay(500);
+    resetFunc(); // Restart the device when done.
+}
+
+void cmdSetAutoRestart() {
+    uint8_t time = Serial.readStringUntil('\n').toInt();
+    settings.auto_restart = time;
+
+    EEPROM.put(EEPROM_ADDR_SETTINGS, settings);
+    Serial.println(F("Set auto restart time, restarting..."));
+    
+    delay(500);
+    resetFunc(); // Restart the device when done.
 }
 
 /* AlexD Commands */
