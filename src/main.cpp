@@ -132,7 +132,7 @@ void loop() {
             Serial.println(F("\"}"));
             Serial.println(F("-------------"));
 
-            alexD(from, packet);
+            remoteEXE(from, packet);
         } else if (packet.packet_type == SLIPPY_PACKET_BROADCAST) {
             Serial.println(F("-- Broadcast Message --"));
             Serial.print(F("Address: "));
@@ -160,6 +160,7 @@ void loop() {
         else if (cmd == "set_address") cmdSetAddress();
         else if (cmd == "set_auto_restart") cmdSetAutoRestart();
         else if (cmd == "nuke_all_the_settings_please") cmdWipe();
+        else if (cmd == "restart") cmdRestart();
         else cmdUnrecognized(cmd);
     }
 
@@ -308,6 +309,7 @@ void cmdHelp() {
     Serial.println(F("    Reset all the settings: \"nuke_all_the_settings_please\""));
     Serial.println(F("Other"));
     Serial.println(F("    Get basic information: \"info\""));
+    Serial.println(F("    Restart the device: \"restart\""));
     Serial.println(F("    Get help: \"help\""));
     Serial.println(F("For more info go to https://github.com/WattleFoxxo/SlippyMesh/"));
     Serial.println(F("----------"));
@@ -400,9 +402,15 @@ void cmdSetAutoRestart() {
     resetFunc(); // Restart the device when done.
 }
 
-/* AlexD Commands */
+void cmdRestart() {
+    Serial.println(F("Restarting..."));
+    delay(500);
+    resetFunc(); // Restart the device
+}
 
-void alexD(uint8_t from, Packet packet) {
+/* Remote EXE Commands */
+
+void remoteEXE(uint8_t from, Packet packet) {
     packet.data[packet.length] = '\0';
     
     if (!strcmp(packet.data, "/ping")) {

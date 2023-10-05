@@ -54,8 +54,9 @@ void cmdSend64();
 void cmdWipe();
 void cmdSetAddress();
 void cmdSetAutoRestart();
+void cmdRestart();
 
-void alexD(uint8_t from, Packet packet);
+void remoteEXE(uint8_t from, Packet packet);
 
 void(* resetFunc)(void) = 0;
 
