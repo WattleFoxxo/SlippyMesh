@@ -1,5 +1,5 @@
 # Slippy Mesh
-A lightweight mesh network
+A lightweight lora mesh network written in c++ 
 
 ## Goals
 - [x] Basic data transmission
