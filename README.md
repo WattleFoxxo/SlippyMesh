@@ -92,12 +92,12 @@ sendex <address> "<command> <args>" 0 1 0b00000000
 ```
 ping
 ```
-> will return "pong"
+> Will return "pong"
 
 ```
 uptime
 ```
-> will return the nodes uptime in "HH:MM:SS"
+> Will return the nodes uptime in "HH:MM:SS"
 
 <br>
 
