@@ -78,7 +78,11 @@ void reciveMessage() {
 
         // Global broadcasting
         if (dest == SLIPPY_BROADCAST_ADDRESS && !getFlag(newPacket.flags, SLIPPY_PACKET_FLAG_LOCAL_BROADCAST)) {
-            sendPacket(newPacket, SLIPPY_BROADCAST_ADDRESS);
+            uint8_t packetSize = SLIPPY_PACKET_SIZE + newPacket.size;
+            uint8_t packetBuff[packetSize];
+            memcpy(packetBuff, &newPacket, packetSize);
+
+            manager->sendtoFromSourceWait(packetBuff, sizeof(packetBuff), SLIPPY_BROADCAST_ADDRESS, from, 0); // ooOoOoOOoOoo spoofing 
         }
 
         // Handle different packet services
@@ -378,7 +382,7 @@ void cmd_sendex(MyCommandParser::Argument *args, char *response) {
     Serial.println(getErrorString(error));
 }
 
-// send64 <address> <message> <type> <service> <flags>
+// send64 <address> <base64> <type> <service> <flags>
 // eg. 'send64 0x01234567 "aGVsbG8=" 0 0 0b00000000' Sends a message to 0x01234567 (this is sendex with base64)
 void cmd_send64(MyCommandParser::Argument *args, char *response) {
     uint8_t base64data[MyRemoteCommandParser::MAX_COMMAND_ARG_SIZE];

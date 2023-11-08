@@ -197,7 +197,6 @@ void RHRouter::clearRoutingTable()
 	_routes[i].state = Invalid;
 }
 
-
 uint8_t RHRouter::sendtoWait(uint8_t* buf, uint8_t len, uint32_t dest, uint8_t flags)
 {
     return sendtoFromSourceWait(buf, len, dest, _thisAddress, flags);

@@ -173,6 +173,8 @@ public:
     ///         - RH_ROUTER_ERROR_UNABLE_TO_DELIVER Not able to deliver to the next hop 
     ///           (usually because it dod not acknowledge due to being off the air or out of range
     uint8_t sendtoWait(uint8_t* buf, uint8_t len, uint32_t dest, uint8_t flags = 0);
+    uint8_t sendtoFromSourceWait(uint8_t* buf, uint8_t len, uint32_t address, uint32_t source, uint8_t flags = 0);
+
 
     /// Starts the receiver if it is not running already, processes and possibly routes any received messages
     /// addressed to other nodes

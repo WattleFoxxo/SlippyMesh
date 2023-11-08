@@ -46,6 +46,24 @@ uint8_t RHMesh::sendtoWait(uint8_t* buf, uint8_t len, uint32_t address, uint8_t 
     return RHRouter::sendtoWait(_tmpMessage, sizeof(RHMesh::MeshMessageHeader) + len, address, flags);
 }
 
+uint8_t RHMesh::sendtoFromSourceWait(uint8_t* buf, uint8_t len, uint32_t address, uint32_t source, uint8_t flags) {
+    if (len > RH_MESH_MAX_MESSAGE_LEN)
+	return RH_ROUTER_ERROR_INVALID_LENGTH;
+
+    if (address != RH_BROADCAST_ADDRESS)
+    {
+	RoutingTableEntry* route = getRouteTo(address);
+	if (!route && !doArp(address))
+	    return RH_ROUTER_ERROR_NO_ROUTE;
+    }
+
+    // Now have a route. Contruct an application layer message and send it via that route
+    MeshApplicationMessage* a = (MeshApplicationMessage*)&_tmpMessage;
+    a->header.msgType = RH_MESH_MESSAGE_TYPE_APPLICATION;
+    memcpy(a->data, buf, len);
+    return RHRouter::sendtoFromSourceWait(_tmpMessage, sizeof(RHMesh::MeshMessageHeader) + len, address, source, flags);
+}
+
 ////////////////////////////////////////////////////////////////////
 bool RHMesh::doArp(uint32_t address)
 {
