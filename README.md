@@ -105,7 +105,7 @@ uptime
 
 In `src/commands.cpp` create a function called rcmd_yourcommandname
 ```c++
-void rcmd_uptime(MyRemoteCommandParser::Argument *args, char *res) {
+void rcmd_yourcommandname(MyRemoteCommandParser::Argument *args, char *res) {
     char* response = "hello world";
     strlcpy(res, response, MyRemoteCommandParser::MAX_RESPONSE_SIZE);
 }
