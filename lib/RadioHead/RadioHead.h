@@ -1917,7 +1917,7 @@ these examples and explanations and extend them to suit your needs.
 #endif
 
 // This is the address that indicates a broadcast
-#define RH_BROADCAST_ADDRESS 0x000000ff
+#define RH_BROADCAST_ADDRESS 0xffffffff
 
 // Specifies an invalid IO pin selection
 #define RH_INVALID_PIN       0xff

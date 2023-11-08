@@ -231,7 +231,6 @@ void RHReliableDatagram::_addSeenID(uint32_t address, uint8_t id) {
 uint8_t RHReliableDatagram::_getSeenID(uint32_t address) {
 	for (uint8_t i = 0; i < 32; i++) {
 		if (((_seenIds[i] >> 8) & 0xFFFFFFFF) == address) {
-			Serial.println("found id");
 			return _seenIds[i] & 0xFF;
 		}
 	}
