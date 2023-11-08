@@ -1,8 +1,6 @@
 # Slippy Mesh
 A lightweight mesh network
 
-<br>
-
 ## Goals
 - [x] Basic data transmission
 - [x] Flooded mesh networking
