@@ -1,7 +1,7 @@
 # Slippy Mesh
 A lightweight lora mesh network written in c++ 
 
-[![Discord](https://img.shields.io/discord/1172014752604631070?style=flat-square&logo=discord)](https://discord.gg/7EZBvFvg9A)
+[![Discord](https://img.shields.io/discord/1172014752604631070?style=flat-square&logo=discord)](https://discord.gg/2CsGXDsMGs)
 ![GitHub Repo stars](https://img.shields.io/github/stars/WattleFoxxo/SlippyMesh?style=flat-square&logo=github)
 
 
