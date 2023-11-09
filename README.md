@@ -2,7 +2,7 @@
 A lightweight lora mesh network written in c++ 
 
 ## Goals
-- [x] Basic data transmission
+- [x] Arduino Mega Compatable
 - [x] Flooded mesh networking
 - [x] Routed mesh networking
 - [ ] API for external programs
