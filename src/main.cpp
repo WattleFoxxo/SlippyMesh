@@ -3,7 +3,6 @@
 MyCommandParser serialParser;
 
 uint8_t incomingBuffer[RH_MESH_MAX_MESSAGE_LEN];
-uint8_t outgoingBuffer[RH_MESH_MAX_MESSAGE_LEN];
 
 uint8_t uid_index = 0;
 uint32_t uids[SLIPPY_MAX_UID];
