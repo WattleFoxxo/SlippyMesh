@@ -1,6 +1,10 @@
 # Slippy Mesh
 A lightweight lora mesh network written in c++ 
 
+![Discord](https://img.shields.io/discord/1172014752604631070?style=flat-square&logo=discord)
+![GitHub Repo stars](https://img.shields.io/github/stars/WattleFoxxo/SlippyMesh?style=flat-square&logo=github)
+
+
 ## Goals
 - [x] Arduino Mega Compatable
 - [x] Flooded mesh networking
