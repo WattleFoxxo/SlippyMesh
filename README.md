@@ -128,4 +128,4 @@ void rcmd_yourcommandname(MyRemoteCommandParser::Argument *args, char *res);
 <br>
 
 ## External Programs
- - [SlippyRouter (coming soon)](https://github.com/)
+ - [SlippyRouter](https://github.com/WattleFoxxo/SlippyRouter)
