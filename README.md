@@ -1,6 +1,9 @@
 # Slippy Mesh V4
 A lightweight flodded mesh-network
 
+> [!WARNING]
+> Use the latest version! This branch is archived.
+
 ## Goals
 - [x] Basic data transmission
 - [x] Flooded mesh networking
