@@ -148,7 +148,9 @@ bool RH_RF95::init()
 // We use this to get RxDone and TxDone interrupts
 void RH_RF95::handleInterrupt()
 {
-        // we need the RF95 IRQ to be level triggered, or we ……have slim chance of missing events
+    RH_MUTEX_LOCK(lock); // Multithreading support
+    
+    // we need the RF95 IRQ to be level triggered, or we ……have slim chance of missing events
     // https://github.com/geeksville/Meshtastic-esp32/commit/78470ed3f59f5c84fbd1325bcff1fd95b2b20183
 
     // Read the interrupt register
@@ -243,6 +245,7 @@ void RH_RF95::handleInterrupt()
     // clear the radio's interrupt flag. So we do it twice. Why?
     spiWrite(RH_RF95_REG_12_IRQ_FLAGS, 0xff); // Clear all IRQ flags
     spiWrite(RH_RF95_REG_12_IRQ_FLAGS, 0xff); // Clear all IRQ flags
+    RH_MUTEX_UNLOCK(lock); 
 }
 
 // These are low level functions that call the interrupt handler for the correct
@@ -293,11 +296,14 @@ void RH_RF95::validateRxBuf()
 
 bool RH_RF95::available()
 {
+    RH_MUTEX_LOCK(lock); // Multithreading support
     if (_mode == RHModeTx)
     {
+    	RH_MUTEX_UNLOCK(lock);
 	return false;
     }
     setModeRx();
+    RH_MUTEX_UNLOCK(lock);
     return _rxBufValid; // Will be set by the interrupt handler when a good message is received
 }
 
@@ -313,6 +319,7 @@ bool RH_RF95::recv(uint8_t* buf, uint8_t* len)
 {
     if (!available())
 	return false;
+    RH_MUTEX_LOCK(lock); // Multithread support
     if (buf && len)
     {
 	ATOMIC_BLOCK_START;
@@ -323,6 +330,7 @@ bool RH_RF95::recv(uint8_t* buf, uint8_t* len)
 	ATOMIC_BLOCK_END;
     }
     clearRxBuf(); // This message accepted and cleared
+    RH_MUTEX_UNLOCK(lock);
     return true;
 }
 
@@ -358,7 +366,9 @@ bool RH_RF95::send(const uint8_t* data, uint8_t len)
     spiBurstWrite(RH_RF95_REG_00_FIFO, data, len);
     spiWrite(RH_RF95_REG_22_PAYLOAD_LENGTH, len + RH_RF95_HEADER_LEN);
     
+    RH_MUTEX_LOCK(lock); // Multithreading support
     setModeTx(); // Start the transmitter
+    RH_MUTEX_UNLOCK(lock);
     
     // when Tx is done, interruptHandler will fire and radio mode will return to STANDBY
     return true;
