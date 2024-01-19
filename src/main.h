@@ -20,6 +20,8 @@
 #define SLIPPY_RADIO_CAD_TIMEOUT 500
 #define SLIPPY_SERIAL_BUAD 115200
 #define SLIPPY_SERIAL_WELCOME_MESSAGE "Type 'help' for help"
+#define SLIPPY_CUSTOM_HEART_BEAT "ALIVE"
+#define SLIPPY_VIEW_HEART_BEAT_MESSAGES false
 
 // DO NOT CHANGE
 #define SLIPPY_BROADCAST_ADDRESS RH_BROADCAST_ADDRESS
@@ -27,6 +29,7 @@
 #define SLIPPY_PACKET_TYPE_CHAIN 1
 #define SLIPPY_PACKET_SERVICE_TXT 0 // pain text NOTE: services 0-16 are reserved for slippy functions
 #define SLIPPY_PACKET_SERVICE_EXE 1 // remote commands
+#define SLIPPY_PACKET_SERVICE_ALIVE 2 // online nodes
 #define SLIPPY_PACKET_DATA_SIZE 200
 #define SLIPPY_PACKET_FLAG_LOCAL_BROADCAST 0
 #define SLIPPY_MAX_UID 32
@@ -44,10 +47,10 @@ const uint8_t SLIPPY_PACKET_SIZE = sizeof(SlippyPacket) - SLIPPY_PACKET_DATA_SIZ
 
 typedef CommandParser<10, 5, 10, 256, 64> MyCommandParser;
 
-void(* resetFunc)(void) = 0;
-
 void reciveMessage();
 uint8_t sendPacket(SlippyPacket packet, uint32_t address);
+
+void heartBeat();
 
 void printAddress(uint32_t address);
 void printBuffer(uint8_t* buffer, uint8_t lenght, char* dilemma=", ");

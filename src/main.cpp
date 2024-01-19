@@ -2,6 +2,8 @@
 
 MyCommandParser serialParser;
 
+void(*RESET_FUNC)(void) = 0x00;
+
 uint8_t incomingBuffer[RH_MESH_MAX_MESSAGE_LEN];
 
 uint8_t uid_index = 0;
@@ -46,6 +48,8 @@ void setup() {
     printAddress(manager->thisAddress());
     Serial.println();
     Serial.println(SLIPPY_SERIAL_WELCOME_MESSAGE);
+
+    heartBeat();
 }
 
 void loop() {
@@ -59,6 +63,9 @@ void loop() {
         char response[MyCommandParser::MAX_RESPONSE_SIZE];
         serialParser.processCommand(line, response);
     }
+
+    if (millis() >= 3600000) heartBeat(); // Heart beat (1H)
+    if (millis() >= 86400000) RESET_FUNC(); // Reset (24H)
 }
 
 // Processes incoming packets
@@ -86,7 +93,7 @@ void reciveMessage() {
 
         // Handle different packet services
         if (newPacket.service == SLIPPY_PACKET_SERVICE_TXT) {
-            // PLAIN TEXT MESSAGE (NOT FOR USE WITH PROGRAMS)
+            // PLAIN TEXT MESSAGE NOT FOR USE WITH PROGRAMS
             // Just print the raw message
 
             Serial.println();
@@ -132,6 +139,20 @@ void reciveMessage() {
                 addUID(responsePacket.uid);
                 sendPacket(responsePacket, from);
             }
+        } else if (newPacket.service == SLIPPY_PACKET_SERVICE_ALIVE && SLIPPY_VIEW_HEART_BEAT_MESSAGES) {
+            // HEART BEAT
+            // to know what nodes are online
+
+            Serial.print(F("Heart beat from ["));
+            printAddress(from);
+            Serial.println(F("]: "));
+
+            printStringBuffer(newPacket.data, newPacket.size);
+            Serial.println();
+
+            Serial.print(F("JSON: "));
+            printPacket(&newPacket, from, dest);
+            Serial.println();
         } else if (newPacket.service > 16) {
             // EXTERNAL SERVICES (FOR USE WITH PROGRAMS)
             // Dont bother printing the raw data
@@ -159,6 +180,19 @@ uint8_t sendPacket(SlippyPacket packet, uint32_t address) {
     memcpy(packetBuff, &packet, packetSize);
 
     return manager->sendtoWait(packetBuff, packetSize, address);
+}
+
+void heartBeat() {
+    SlippyPacket newPacket;
+
+    newPacket.service = SLIPPY_PACKET_SERVICE_ALIVE;
+    newPacket.uid = random32bit();
+    newPacket.size = sizeof(SLIPPY_CUSTOM_HEART_BEAT);
+
+    memcpy(newPacket.data, SLIPPY_CUSTOM_HEART_BEAT, newPacket.size);
+    addUID(newPacket.uid);
+
+    sendPacket(newPacket, SLIPPY_BROADCAST_ADDRESS);
 }
 
 // Prints a address
