@@ -34,7 +34,7 @@ void setup() {
     }
 
     // set radio parameters
-    radio.setTxPower(SLIPPY_RADIO_POWER, false);
+    // radio.setTxPower(SLIPPY_RADIO_POWER, false); // :(
     radio.setFrequency(SLIPPY_RADIO_FREQUENCY);
     radio.setCADTimeout(SLIPPY_RADIO_CAD_TIMEOUT);
 
