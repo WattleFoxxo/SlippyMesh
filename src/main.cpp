@@ -6,6 +6,8 @@ void(*RESET_FUNC)(void) = 0x00;
 
 uint8_t incomingBuffer[RH_MESH_MAX_MESSAGE_LEN];
 
+uint64_t heartBeatTimer = 0;
+
 uint8_t uid_index = 0;
 uint32_t uids[SLIPPY_MAX_UID];
 
@@ -48,8 +50,6 @@ void setup() {
     printAddress(manager->thisAddress());
     Serial.println();
     Serial.println(SLIPPY_SERIAL_WELCOME_MESSAGE);
-
-    heartBeat();
 }
 
 void loop() {
@@ -64,8 +64,7 @@ void loop() {
         serialParser.processCommand(line, response);
     }
 
-    if (millis() >= 3600000) heartBeat(); // Heart beat (1H)
-    if (millis() >= 86400000) RESET_FUNC(); // Reset (24H)
+    if (millis() - heartBeatTimer >= 3600000) heartBeat(); // Heart beat (1H)
 }
 
 // Processes incoming packets
@@ -183,6 +182,8 @@ uint8_t sendPacket(SlippyPacket packet, uint32_t address) {
 }
 
 void heartBeat() {
+    heartBeatTimer += 3600000;
+
     SlippyPacket newPacket;
 
     newPacket.service = SLIPPY_PACKET_SERVICE_ALIVE;
