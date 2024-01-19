@@ -50,6 +50,8 @@ void setup() {
     printAddress(manager->thisAddress());
     Serial.println();
     Serial.println(SLIPPY_SERIAL_WELCOME_MESSAGE);
+
+    heartBeat();
 }
 
 void loop() {
@@ -144,7 +146,7 @@ void reciveMessage() {
 
             Serial.print(F("Heart beat from ["));
             printAddress(from);
-            Serial.println(F("]: "));
+            Serial.print(F("]: "));
 
             printStringBuffer(newPacket.data, newPacket.size);
             Serial.println();
@@ -182,7 +184,7 @@ uint8_t sendPacket(SlippyPacket packet, uint32_t address) {
 }
 
 void heartBeat() {
-    heartBeatTimer += 3600000;
+    heartBeatTimer = millis();
 
     SlippyPacket newPacket;
 
