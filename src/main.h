@@ -15,6 +15,7 @@
 #include <RHMesh.h>
 #include <RH_RF95.h>
 
+#include "version.h" 
 #include "commands.h"
 
 // Settings
@@ -27,7 +28,6 @@
 #define SLIPPY_VIEW_HEART_BEAT_MESSAGES true
 
 // DO NOT CHANGE
-#define SLIPPY_VERSION "2024.01.19-$Id$"
 #define SLIPPY_BROADCAST_ADDRESS RH_BROADCAST_ADDRESS
 #define SLIPPY_PACKET_TYPE_NORMAL 0
 #define SLIPPY_PACKET_TYPE_CHAIN 1
