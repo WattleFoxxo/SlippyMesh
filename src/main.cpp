@@ -145,6 +145,7 @@ void setup() {
     registerRemoteCommands();
 
     Serial.println(F("Ready!"));
+    Serial.print(F("SlippyMesh Version " SLIPPY_VERSION));
     Serial.print(F("Your address is: "));
     printAddress(manager->thisAddress());
     Serial.println();
