@@ -4,6 +4,9 @@
 #include <Arduino.h>
 #include <EEPROM.h>
 #include <SPI.h>
+#include <SD.h>
+
+#include <avr/wdt.h>
 
 #include <ArduinoUniqueID.h>
 #include <base64.hpp>
@@ -17,11 +20,12 @@
 // Settings
 #define SLIPPY_RADIO_FREQUENCY 916.0
 #define SLIPPY_RADIO_POWER 23
-#define SLIPPY_RADIO_CAD_TIMEOUT 500
+#define SLIPPY_RADIO_CAD_TIMEOUT 5000
 #define SLIPPY_SERIAL_BUAD 115200
 #define SLIPPY_SERIAL_WELCOME_MESSAGE "Type 'help' for help"
-#define SLIPPY_CUSTOM_HEART_BEAT "HEART BEAT"
-#define SLIPPY_VIEW_HEART_BEAT_MESSAGES false
+#define SLIPPY_CUSTOM_HEART_BEAT "No birds here :)"
+#define SLIPPY_VIEW_HEART_BEAT_MESSAGES true
+#define SLIPPY_VERSION "2024.01.19-$Id$"
 
 // DO NOT CHANGE
 #define SLIPPY_BROADCAST_ADDRESS RH_BROADCAST_ADDRESS
@@ -30,7 +34,9 @@
 #define SLIPPY_PACKET_SERVICE_TXT 0 // pain text NOTE: services 0-16 are reserved for slippy functions
 #define SLIPPY_PACKET_SERVICE_EXE 1 // remote commands
 #define SLIPPY_PACKET_SERVICE_ALIVE 2 // online nodes
+#define SLIPPY_PACKET_SERVICE_OTA 3
 #define SLIPPY_PACKET_DATA_SIZE 200
+#define SLIPPY_PACKET_CHAIN_DATA_SIZE 128
 #define SLIPPY_PACKET_FLAG_LOCAL_BROADCAST 0
 #define SLIPPY_MAX_UID 32
 
@@ -39,8 +45,18 @@ struct SlippyPacket {
     uint8_t service = SLIPPY_PACKET_SERVICE_TXT; // NOTE: services 0-16 are reserved
     uint8_t flags = 0x00;
     uint32_t uid;
+
     uint8_t size;
     uint8_t data[SLIPPY_PACKET_DATA_SIZE];
+};
+
+struct SlippyChunk {
+    uint32_t current;
+    uint32_t total;
+    uint32_t total_bytes;
+
+    uint8_t size;
+    uint8_t data[128];
 };
 
 const uint8_t SLIPPY_PACKET_SIZE = sizeof(SlippyPacket) - SLIPPY_PACKET_DATA_SIZE;
@@ -49,6 +65,7 @@ typedef CommandParser<10, 5, 10, 256, 64> MyCommandParser;
 
 void reciveMessage();
 uint8_t sendPacket(SlippyPacket packet, uint32_t address);
+uint8_t sendPacket_(uint8_t* packet, uint8_t size, uint32_t address);
 
 void heartBeat();
 

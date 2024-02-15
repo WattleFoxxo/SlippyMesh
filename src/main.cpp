@@ -14,6 +14,99 @@ uint32_t uids[SLIPPY_MAX_UID];
 RH_RF95 radio;
 RHMesh *manager;
 
+Sd2Card card;
+File firmwareBin;
+File firmwareTmp;
+
+// (address) (total) (total_bytes)
+
+void cmd_rmflash(MyCommandParser::Argument *args, char *response) {
+
+    uint32_t total = args[1].asUInt64;
+    uint32_t total_bytes = args[2].asUInt64;
+
+    uint8_t data[128];
+
+    for (uint32_t i = 0; i < total; i++) {
+        Serial.print("OTA: Waiting for chunk ");
+        Serial.println(i);
+        Serial.setTimeout(99999999);
+        Serial.readBytes(data, 128);
+
+        SlippyPacket newPacket;
+        SlippyChunk newChunk;
+
+        newChunk.total = total;
+        newChunk.total_bytes = total_bytes;
+        newChunk.current = i;
+
+        newChunk.size = 128; // TODO: FIX
+        memcpy(newChunk.data, data, newChunk.size);
+
+        newPacket.service = SLIPPY_PACKET_SERVICE_OTA;
+        newPacket.uid = random32bit();
+        newPacket.size = sizeof(SlippyChunk);
+        memcpy(newPacket.data, &newChunk, newPacket.size);
+        addUID(newPacket.uid);
+
+        Serial.print("OTA: Updating remote... (");
+        Serial.print(newChunk.current + 1);
+        Serial.print("/");
+        Serial.print(newChunk.total);
+        Serial.print(") ... ");
+
+        uint8_t error = sendPacket(newPacket, args[0].asUInt64);
+        Serial.println(getErrorString(error));
+
+        if (error != 0) i -= 1;
+    }
+
+    // Serial.print("OTA: Starting OTA Update: \"firmware.bin\" (");
+    // Serial.print((uint32_t)(args[0].asUInt64));
+    // Serial.println(" bytes)");
+
+    // uint8_t BIN_BUFFER[128];
+
+    // for (uint32_t i = 0; i < args[0].asUInt64; i += 128) {
+
+    //     Serial.readBytes(BIN_BUFFER, 128);
+
+    //     while (true) {
+    //         SlippyPacket newPacket;
+    //         SlippyChunk newChunk;
+
+    //         newChunk.total = ceil(args[0].asUInt64 / 128.0f);
+    //         newChunk.total_bytes = args[0].asUInt64;
+    //         newChunk.current = i / 128;
+    //         newChunk.size = (i + 128 < args[0].asUInt64) ? 128 : args[0].asUInt64 - i;
+
+    //         for (int j = 0; j < newChunk.size; j++) {
+    //             newChunk.data[j] = pgm_read_byte(BIN_BUFFER[j]);
+    //         }
+
+    //         newPacket.service = SLIPPY_PACKET_SERVICE_OTA;
+    //         newPacket.uid = random32bit();
+    //         newPacket.size = sizeof(SlippyChunk);
+    //         memcpy(newPacket.data, &newChunk, newPacket.size);
+    //         addUID(newPacket.uid);
+
+    //         Serial.print("OTA: Updating remote... (");
+    //         Serial.print(newChunk.current + 1);
+    //         Serial.print("/");
+    //         Serial.print(newChunk.total);
+    //         Serial.print(") ... ");
+
+    //         uint8_t error = sendPacket(newPacket, args[1].asUInt64);
+    //         Serial.println(getErrorString(error));
+
+    //         if (error == 0) break;
+    //     }
+    // }
+
+    // Serial.println("OTA: Done!");
+
+}
+
 void setup() {
     randomSeed(analogRead(0));
 	Serial.begin(SLIPPY_SERIAL_BUAD);
@@ -33,8 +126,13 @@ void setup() {
         while(true);
     }
 
+    if (!SD.begin(53)) {
+        Serial.println(F("ERROR: Failed to initialize the sd card"));
+        // while (1);
+    }
+
     // set radio parameters
-    // radio.setTxPower(SLIPPY_RADIO_POWER, false); // :(
+    radio.setTxPower(SLIPPY_RADIO_POWER, false); // :(
     radio.setFrequency(SLIPPY_RADIO_FREQUENCY);
     radio.setCADTimeout(SLIPPY_RADIO_CAD_TIMEOUT);
 
@@ -43,6 +141,7 @@ void setup() {
     serialParser.registerCommand("send", "us", &cmd_send);
     serialParser.registerCommand("sendex", "usuuu", &cmd_sendex);
     serialParser.registerCommand("send64", "usuuu", &cmd_send64);
+    serialParser.registerCommand("flash", "uuu", &cmd_rmflash);
     registerRemoteCommands();
 
     Serial.println(F("Ready!"));
@@ -154,6 +253,48 @@ void reciveMessage() {
             Serial.print(F("JSON: "));
             printPacket(&newPacket, from, dest);
             Serial.println();
+        } else if (newPacket.service == SLIPPY_PACKET_SERVICE_OTA) {
+            SlippyChunk newChunk;
+            memcpy(&newChunk, newPacket.data, len);      
+
+            if (newChunk.current == 0) {
+                Serial.print(F("OTA: Starting OTA update ("));
+                Serial.print(newChunk.total_bytes);
+                Serial.println(F(" bytes)"));
+
+                Serial.println(F("OTA: Removing old firmware"));
+                SD.remove("firmware.bin");
+            }
+
+            Serial.print(F("OTA: Updating.. ("));
+            Serial.print(newChunk.current + 1);
+            Serial.print(F("/"));
+            Serial.print(newChunk.total);
+            Serial.println(F(")"));
+
+            firmwareTmp = SD.open("firmware.bin", FILE_WRITE);
+
+            if (firmwareTmp) {
+                firmwareTmp.write(newChunk.data, newChunk.size);
+                firmwareTmp.close();
+
+                if (newChunk.current + 1 == newChunk.total) {
+                    Serial.println(F("OTA: Done!"));
+                    Serial.println(F("OTA: Restarting with new firmware.."));
+
+                    EEPROM.write(0x1FF, 0xF0);
+
+                    delay(1000);
+
+                    wdt_enable(WDTO_500MS);
+                    wdt_reset();
+                    
+                    while(1) delay(2000);
+                }
+            } else {
+                Serial.println("Faild to write to sd card!");
+            }
+            
         } else if (newPacket.service > 16) {
             // EXTERNAL SERVICES (FOR USE WITH PROGRAMS)
             // Dont bother printing the raw data
@@ -165,7 +306,6 @@ void reciveMessage() {
             Serial.print(F("JSON: "));
             printPacket(&newPacket, from, dest);
             Serial.println();
-
         }
 
     }
@@ -181,6 +321,17 @@ uint8_t sendPacket(SlippyPacket packet, uint32_t address) {
     memcpy(packetBuff, &packet, packetSize);
 
     return manager->sendtoWait(packetBuff, packetSize, address);
+}
+
+// Sends a packet to the target address
+uint8_t sendPacket_(uint8_t* packet, uint8_t size, uint32_t address) {
+    if (address == manager->thisAddress()) return 6;
+
+    // Convert the struct to a byte array
+    // uint8_t packetBuff[size];
+    // memcpy(packetBuff, &packet, size);
+
+    return manager->sendtoWait(packet, size, address);
 }
 
 void heartBeat() {
